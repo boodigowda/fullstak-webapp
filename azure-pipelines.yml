@@ -1,49 +1,89 @@
-# Node.js with React
-# Build a Node.js project that uses React.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
-
 trigger:
-- main
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'ubuntu-latest'
 
-steps:
+stages:
+# ---------- BUILD STAGE (runs on every PR and every push to main) ----------
+- stage: Build
+  jobs:
+    - job: BuildBackend
+      steps:
+        - task: UsePythonVersion@0
+          inputs:
+            versionSpec: '3.12'
+        - script: |
+            python -m venv antenv
+            source antenv/bin/activate
+            pip install -r requirements.txt
+          displayName: 'Install backend dependencies'
+        - task: ArchiveFiles@2
+          inputs:
+            rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+            includeRootFolder: false
+            archiveFile: '$(Build.ArtifactStagingDirectory)/backend.zip'
+            excludePaths: |
+              frontend
+              antenv
+        - publish: '$(Build.ArtifactStagingDirectory)/backend.zip'
+          artifact: backend
 
-# Install Python
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '3.11'
+    - job: BuildFrontend
+      steps:
+        - task: NodeTool@0
+          inputs:
+            versionSpec: '20.x'
+        - script: |
+            cd frontend
+            npm ci
+            npm run build
+          displayName: 'Install & build frontend'
+        - task: ArchiveFiles@2
+          inputs:
+            rootFolderOrFile: 'frontend/build'
+            includeRootFolder: true
+            archiveFile: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+        - publish: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+          artifact: frontend
 
-# Install Python packages
-- script: |
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
-  displayName: 'Install Python Dependencies'
+# ---------- DEPLOY STAGE (only runs on main, NOT on PRs) ----------
+- stage: Deploy
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+    - deployment: DeployBackend
+      environment: 'production-backend'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: backend
+              - task: AzureWebApp@1
+                inputs:
+                  azureSubscription: 'azure-subscription-connection'
+                  appType: webAppLinux
+                  appName: 'fullstak-backend-python'
+                  package: '$(Pipeline.Workspace)/backend/backend.zip'
 
-# Install Node.js
-- task: NodeTool@0
-  inputs:
-    versionSpec: '20.x'
-
-# Build React
-- script: |
-    cd frontend
-    npm install
-    npm run build
-  displayName: 'Build React App'
-
-# Archive project
-- task: ArchiveFiles@2
-  inputs:
-    rootFolderOrFile: '$(Build.SourcesDirectory)'
-    includeRootFolder: false
-    archiveType: zip
-    archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-
-# Publish Artifact
-- task: PublishBuildArtifacts@1
-  inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'drop'
+    - deployment: DeployFrontend
+      environment: 'production-frontend'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: frontend
+              - task: AzureWebApp@1
+                inputs:
+                  azureSubscription: 'azure-subscription-connection'
+                  appType: webAppLinux
+                  appName: 'fullstak-frontend-react'
+                  package: '$(Pipeline.Workspace)/frontend/frontend.zip'
