@@ -4,7 +4,7 @@ import "./App.css";
 import TaglineSection from "./TaglineSection";
 
 const api = axios.create({
-  baseURL: "https://fullstak-backend-python-feh8hrdagefghxcx.southindia-01.azurewebsites.net",
+  baseURL: "http://localhost:8000",
 });
 
 function App() {
