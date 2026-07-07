@@ -10,12 +10,40 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
+
+# Install Python
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.11'
+
+# Install Python packages
+- script: |
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+  displayName: 'Install Python Dependencies'
+
+# Install Node.js
 - task: NodeTool@0
   inputs:
     versionSpec: '20.x'
-  displayName: 'Install Node.js'
 
+# Build React
 - script: |
+    cd frontend
     npm install
     npm run build
-  displayName: 'npm install and build'
+  displayName: 'Build React App'
+
+# Archive project
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(Build.SourcesDirectory)'
+    includeRootFolder: false
+    archiveType: zip
+    archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+
+# Publish Artifact
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
